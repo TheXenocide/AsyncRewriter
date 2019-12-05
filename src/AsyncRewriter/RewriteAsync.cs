@@ -1,13 +1,7 @@
-﻿#if NET452
-using System;
-using System.Collections.Generic;
-using System.IO;
+﻿using System.IO;
 using System.Linq;
-using System.Text;
-using System.Threading.Tasks;
 using AsyncRewriter.Logging;
 using Microsoft.Build.Framework;
-using Microsoft.Build.Utilities;
 
 namespace AsyncRewriter
 {
@@ -18,10 +12,12 @@ namespace AsyncRewriter
     /// </remarks>
     public class RewriteAsync : Microsoft.Build.Utilities.Task
     {
+
         [Required]
-        public ITaskItem[] InputFiles { get; set; }
+        public ITaskItem[] InputFiles { get; set; } = default!;
+
         [Required]
-        public ITaskItem OutputFile { get; set; }
+        public ITaskItem OutputFile { get; set; } = default!;
 
         readonly Rewriter _rewriter;
 
@@ -36,6 +32,6 @@ namespace AsyncRewriter
             File.WriteAllText(OutputFile.ItemSpec, asyncCode);
             return true;
         }
+
     }
 }
-#endif

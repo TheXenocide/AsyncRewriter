@@ -1,0 +1,14 @@
+﻿<Project Sdk="Microsoft.NET.Sdk">
+  <PropertyGroup>
+    <TargetFramework>netcoreapp2.2</TargetFramework>
+    <OutputType>Exe</OutputType>
+    <PackageType>DotNetCliTool</PackageType>
+    <Description>Uses the Microsoft Build Framework (a.k.a. "Roslyn") to rewrite synchronous C# methods into async counterparts. This package is a .NET Core CLI Tool meant to be used with the "dotnet tool install" command or the "DotNetCliToolReference" project item.</Description>
+  </PropertyGroup>
+  <ItemGroup>
+    <ProjectReference Include="..\AsyncRewriter\AsyncRewriter.csproj" />
+  </ItemGroup>
+  <ItemGroup>
+    <PackageReference Include="Microsoft.Extensions.FileSystemGlobbing" Version="3.0.0" />
+  </ItemGroup>
+</Project>

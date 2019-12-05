@@ -21,7 +21,7 @@ namespace AsyncRewriter
         /// <summary>
         /// Invocations of methods on these types never get rewritten to async
         /// </summary>
-        HashSet<ITypeSymbol> _excludedTypes;
+        HashSet<ITypeSymbol> excludedTypesSet;
 
         public bool GenerateConfigureAwait { get; set; } = false;
 
@@ -43,27 +43,14 @@ namespace AsyncRewriter
             "System.IO.MemoryStream"
         };
 
-        /// <summary>
-        /// Contains the parsed contents of the AsyncRewriterHelpers.cs file (essentially
-        /// <see cref="RewriteAsync"/> which needs to always be compiled in.
-        /// </summary>
-        readonly SyntaxTree _asyncHelpersSyntaxTree;
-
-        ITypeSymbol _cancellationTokenSymbol;
-
         readonly ILogger _log;
 
-        public Rewriter(ILogger log=null)
+        public Rewriter(ILogger? log = null)
         {
             _log = log ?? new ConsoleLoggingAdapter();
-            // ReSharper disable once AssignNullToNotNullAttribute
-            using (var reader = new StreamReader(typeof(Rewriter).GetTypeInfo().Assembly.GetManifestResourceStream("AsyncRewriter.AsyncRewriterHelpers.cs")))
-            {
-                _asyncHelpersSyntaxTree = SyntaxFactory.ParseSyntaxTree(reader.ReadToEnd());
-            }
         }
 
-        public string RewriteAndMerge(string[] paths, string[] additionalAssemblyNames=null, string[] excludedTypes = null)
+        public string RewriteAndMerge(string[] paths, string[]? additionalAssemblyNames = null, string[]? excludedTypes = null)
         {
             if (paths.All(p => Path.GetFileName(p) != "AsyncRewriterHelpers.cs"))
                 throw new ArgumentException("AsyncRewriterHelpers.cs must be included in paths", nameof(paths));
@@ -93,15 +80,15 @@ namespace AsyncRewriter
             return RewriteAndMerge(syntaxTrees, compilation, excludedTypes).ToString();
         }
 
-        public SyntaxTree RewriteAndMerge(SyntaxTree[] syntaxTrees, CSharpCompilation compilation, string[] excludedTypes = null)
+        public SyntaxTree RewriteAndMerge(SyntaxTree[] syntaxTrees, CSharpCompilation compilation, string[]? excludedTypes = null)
         {
             var rewrittenTrees = Rewrite(syntaxTrees, compilation, excludedTypes).ToArray();
 
             var usings = rewrittenTrees.SelectMany(t => t.GetCompilationUnitRoot().Usings).ToList();
-            // Add "Resharper disable all" comment
-            usings[usings.Count - 1] = usings[usings.Count - 1].WithTrailingTrivia(
-                SyntaxTriviaList.Create(SyntaxFactory.Comment("\n// Resharper disable all"))
-            );
+            //// Add "Resharper disable all" comment
+            //usings[usings.Count - 1] = usings[usings.Count - 1].WithTrailingTrivia(
+            //    SyntaxTriviaList.Create(SyntaxFactory.Comment("\n// Resharper disable all"))
+            //);
 
             return SyntaxFactory.SyntaxTree(
                 SyntaxFactory.CompilationUnit()
@@ -111,7 +98,7 @@ namespace AsyncRewriter
                             .SelectMany(t => t.GetCompilationUnitRoot().Members)
                             .Cast<NamespaceDeclarationSyntax>()
                             .SelectMany(ns => ns.Members)
-                            .Cast<ClassDeclarationSyntax>()
+                            .Cast<TypeDeclarationSyntax>()
                             .GroupBy(cls => cls.FirstAncestorOrSelf<NamespaceDeclarationSyntax>().Name.ToString())
                             .Select(g => SyntaxFactory.NamespaceDeclaration(SyntaxFactory.ParseName(g.Key))
                                 .WithMembers(SyntaxFactory.List<MemberDeclarationSyntax>(g))
@@ -122,11 +109,11 @@ namespace AsyncRewriter
             );
         }
 
-        public IEnumerable<SyntaxTree> Rewrite(SyntaxTree[] syntaxTrees, CSharpCompilation compilation, string[] excludedTypes=null)
+        public IEnumerable<SyntaxTree> Rewrite(SyntaxTree[] syntaxTrees, CSharpCompilation compilation, string[]? excludedTypes = null)
         {
-            _cancellationTokenSymbol = compilation.GetTypeByMetadataName("System.Threading.CancellationToken");
+            var cancellationTokenSymbol = compilation.GetTypeByMetadataName("System.Threading.CancellationToken");
 
-            _excludedTypes = new HashSet<ITypeSymbol>();
+            excludedTypesSet = new HashSet<ITypeSymbol>();
 
             // Handle the user-provided exclude list
             if (excludedTypes != null)
@@ -135,11 +122,11 @@ namespace AsyncRewriter
                 var notFound = excludedTypeSymbols.IndexOf(null);
                 if (notFound != -1)
                     throw new ArgumentException($"Type {excludedTypes[notFound]} not found in compilation", nameof(excludedTypes));
-                _excludedTypes.UnionWith(excludedTypeSymbols);
+                excludedTypesSet.UnionWith(excludedTypeSymbols);
             }
 
             // And the builtin exclude list
-            _excludedTypes.UnionWith(
+            excludedTypesSet.UnionWith(
                 AlwaysExcludedTypes
                     .Select(compilation.GetTypeByMetadataName)
                     .Where(sym => sym != null)
@@ -165,22 +152,22 @@ namespace AsyncRewriter
 
                 // Add #pragma warning disable at the top of the file
                 usings = usings.Replace(usings[0], usings[0].WithLeadingTrivia(SyntaxFactory.Trivia(SyntaxFactory.PragmaWarningDirectiveTrivia(SyntaxFactory.Token(SyntaxKind.DisableKeyword), true))));
-                    
+
                 var namespaces = SyntaxFactory.List<MemberDeclarationSyntax>(
                     syntaxTree.GetRoot()
                     .DescendantNodes()
                     .OfType<MethodDeclarationSyntax>()
                     .Where(m => m.AttributeLists.SelectMany(al => al.Attributes).Any(a => a.Name.ToString() == "RewriteAsync"))
-                    .GroupBy(m => m.FirstAncestorOrSelf<ClassDeclarationSyntax>())
+                    .GroupBy(m => m.FirstAncestorOrSelf<TypeDeclarationSyntax>())
                     .GroupBy(g => g.Key.FirstAncestorOrSelf<NamespaceDeclarationSyntax>())
                     .Select(nsGrp =>
                         SyntaxFactory.NamespaceDeclaration(nsGrp.Key.Name)
                         .WithMembers(SyntaxFactory.List<MemberDeclarationSyntax>(nsGrp.Select(clsGrp =>
-                            SyntaxFactory.ClassDeclaration(clsGrp.Key.Identifier)
+                            SyntaxFactory.TypeDeclaration(clsGrp.Key.Kind(), clsGrp.Key.Identifier)
                                 .WithModifiers(clsGrp.Key.Modifiers)
                                 .WithTypeParameterList(clsGrp.Key.TypeParameterList)
                                 .WithMembers(SyntaxFactory.List<MemberDeclarationSyntax>(
-                                    clsGrp.Select(m => RewriteMethod(m, semanticModel))
+                                    clsGrp.Select(m => RewriteMethod(m, semanticModel, cancellationTokenSymbol))
                                 ))
                         )))
                     )
@@ -196,9 +183,10 @@ namespace AsyncRewriter
             }
         }
 
-        MethodDeclarationSyntax RewriteMethod(MethodDeclarationSyntax inMethodSyntax, SemanticModel semanticModel)
+        MethodDeclarationSyntax RewriteMethod(MethodDeclarationSyntax inMethodSyntax, SemanticModel semanticModel, ITypeSymbol cancellationTokenSymbol)
         {
             var inMethodSymbol = semanticModel.GetDeclaredSymbol(inMethodSyntax);
+            // ASYNC_TODO: Find all references
 
             //Log.LogMessage("Method {0}: {1}", inMethodInfo.Symbol.Name, inMethodInfo.Symbol.);
 
@@ -207,19 +195,30 @@ namespace AsyncRewriter
             _log.Debug("  Rewriting method {0} to {1}", inMethodSymbol.Name, outMethodName);
 
             // Visit all method invocations inside the method, rewrite them to async if needed
-            var rewriter = new MethodInvocationRewriter(_log, semanticModel, _excludedTypes, _cancellationTokenSymbol, GenerateConfigureAwait);
+            var rewriter = new MethodInvocationRewriter(_log, semanticModel, excludedTypesSet, cancellationTokenSymbol, GenerateConfigureAwait);
             var outMethod = (MethodDeclarationSyntax)rewriter.Visit(inMethodSyntax);
 
             // Method signature
             outMethod = outMethod
                 .WithIdentifier(SyntaxFactory.Identifier(outMethodName))
-                .WithAttributeLists(new SyntaxList<AttributeListSyntax>())
-                .WithModifiers(inMethodSyntax.Modifiers
-                  .Add(SyntaxFactory.Token(SyntaxKind.AsyncKeyword))
-                  //.Remove(SyntaxFactory.Token(SyntaxKind.OverrideKeyword))
-                  //.Remove(SyntaxFactory.Token(SyntaxKind.NewKeyword))
-                )
+                .WithAttributeLists(new SyntaxList<AttributeListSyntax>());
+
+            if (inMethodSyntax.FirstAncestorOrSelf<TypeDeclarationSyntax>().Kind() == SyntaxKind.InterfaceDeclaration)
+            {
+                outMethod = outMethod
+                    .WithModifiers(inMethodSyntax.Modifiers);
+            }
+            else
+            {
+                outMethod = outMethod
+                    .WithModifiers(inMethodSyntax.Modifiers
+                      .Add(SyntaxFactory.Token(SyntaxKind.AsyncKeyword)));
+            }
+                //.Remove(SyntaxFactory.Token(SyntaxKind.OverrideKeyword))
+                //.Remove(SyntaxFactory.Token(SyntaxKind.NewKeyword))
+                
                 // Insert the cancellation token into the parameter list at the right place
+            outMethod = outMethod
                 .WithParameterList(SyntaxFactory.ParameterList(inMethodSyntax.ParameterList.Parameters.Insert(
                     inMethodSyntax.ParameterList.Parameters.TakeWhile(p => p.Default == null && !p.Modifiers.Any(m => m.IsKind(SyntaxKind.ParamsKeyword))).Count(),
                     SyntaxFactory.Parameter(
@@ -240,7 +239,8 @@ namespace AsyncRewriter
             for (var i = 0; i < outMethod.Modifiers.Count;)
             {
                 var text = outMethod.Modifiers[i].Text;
-                if (text == "override" || text == "new") {
+                if (text == "override" || text == "new")
+                {
                     outMethod = outMethod.WithModifiers(outMethod.Modifiers.RemoveAt(i));
                     continue;
                 }
@@ -249,12 +249,12 @@ namespace AsyncRewriter
 
             var attr = inMethodSymbol.GetAttributes().Single(a => a.AttributeClass.Name == "RewriteAsyncAttribute");
 
-            if (attr.ConstructorArguments.Length > 0 && (bool) attr.ConstructorArguments[0].Value)
+            if (attr.ConstructorArguments.Length > 0 && (bool)attr.ConstructorArguments[0].Value)
             {
                 outMethod = outMethod.AddModifiers(SyntaxFactory.Token(SyntaxKind.OverrideKeyword));
             }
 
-           return outMethod;
+            return outMethod;
         }
     }
 

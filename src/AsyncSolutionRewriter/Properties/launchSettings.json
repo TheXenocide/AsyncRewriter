@@ -1,0 +1,8 @@
+{
+  "profiles": {
+    "AsyncSolutionRewriter": {
+      "commandName": "Project",
+      "commandLineArgs": "C:\\Users\\jdiorio\\source\\repos\\RewriteSample\\RewriteSample.sln"
+    }
+  }
+}

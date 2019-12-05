@@ -1,15 +1,20 @@
 ﻿
 Microsoft Visual Studio Solution File, Format Version 12.00
-# Visual Studio 14
-VisualStudioVersion = 14.0.25123.0
+# Visual Studio Version 16
+VisualStudioVersion = 16.0.29519.161
 MinimumVisualStudioVersion = 10.0.40219.1
-Project("{2150E333-8FDC-42A3-9474-1A3956D46DE8}") = "src", "src", "{8A657AC5-150F-4F55-8D9E-4F1A56D62D60}"
+Project("{2150E333-8FDC-42A3-9474-1A3956D46DE8}") = "src", "src", "{8A889024-2C05-403E-A220-3778B804D032}"
+	ProjectSection(SolutionItems) = preProject
+		src\Directory.Build.props = src\Directory.Build.props
+	EndProjectSection
 EndProject
-Project("{2150E333-8FDC-42A3-9474-1A3956D46DE8}") = "test", "test", "{802E669C-6885-4E60-9CFB-8CFB47EAF16A}"
+Project("{9A19103F-16F7-4668-BE54-9A1E7A4F7556}") = "AsyncRewriter", "src\AsyncRewriter\AsyncRewriter.csproj", "{FD870577-C7EF-41B5-91F1-BBCDA0C1435D}"
 EndProject
-Project("{8BB2217D-0F2D-49D1-97BC-3654ED321F3B}") = "AsyncRewriter", "src\AsyncRewriter\AsyncRewriter.xproj", "{92FF6597-1851-4DBA-B9E6-6F0743D033CE}"
+Project("{9A19103F-16F7-4668-BE54-9A1E7A4F7556}") = "dotnet-rewrite-async", "src\dotnet-rewrite-async\dotnet-rewrite-async.csproj", "{80CB8FC3-1091-4D23-B50A-55D80913483D}"
 EndProject
-Project("{8BB2217D-0F2D-49D1-97BC-3654ED321F3B}") = "dotnet-rewrite-async", "src\dotnet-rewrite-async\dotnet-rewrite-async.xproj", "{5B3EC5B3-D3E0-4346-9BF8-01B30B6FC2F4}"
+Project("{2150E333-8FDC-42A3-9474-1A3956D46DE8}") = "Solution Items", "Solution Items", "{4536C5CE-FD43-49C4-9FD6-94179E2D4E4D}"
+EndProject
+Project("{9A19103F-16F7-4668-BE54-9A1E7A4F7556}") = "AsyncSolutionRewriter", "src\AsyncSolutionRewriter\AsyncSolutionRewriter.csproj", "{CA09287F-308E-4FB6-AD84-15D21BCE9A55}"
 EndProject
 Global
 	GlobalSection(SolutionConfigurationPlatforms) = preSolution
@@ -17,20 +22,28 @@ Global
 		Release|Any CPU = Release|Any CPU
 	EndGlobalSection
 	GlobalSection(ProjectConfigurationPlatforms) = postSolution
-		{92FF6597-1851-4DBA-B9E6-6F0743D033CE}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
-		{92FF6597-1851-4DBA-B9E6-6F0743D033CE}.Debug|Any CPU.Build.0 = Debug|Any CPU
-		{92FF6597-1851-4DBA-B9E6-6F0743D033CE}.Release|Any CPU.ActiveCfg = Release|Any CPU
-		{92FF6597-1851-4DBA-B9E6-6F0743D033CE}.Release|Any CPU.Build.0 = Release|Any CPU
-		{5B3EC5B3-D3E0-4346-9BF8-01B30B6FC2F4}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
-		{5B3EC5B3-D3E0-4346-9BF8-01B30B6FC2F4}.Debug|Any CPU.Build.0 = Debug|Any CPU
-		{5B3EC5B3-D3E0-4346-9BF8-01B30B6FC2F4}.Release|Any CPU.ActiveCfg = Release|Any CPU
-		{5B3EC5B3-D3E0-4346-9BF8-01B30B6FC2F4}.Release|Any CPU.Build.0 = Release|Any CPU
+		{FD870577-C7EF-41B5-91F1-BBCDA0C1435D}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
+		{FD870577-C7EF-41B5-91F1-BBCDA0C1435D}.Debug|Any CPU.Build.0 = Debug|Any CPU
+		{FD870577-C7EF-41B5-91F1-BBCDA0C1435D}.Release|Any CPU.ActiveCfg = Release|Any CPU
+		{FD870577-C7EF-41B5-91F1-BBCDA0C1435D}.Release|Any CPU.Build.0 = Release|Any CPU
+		{80CB8FC3-1091-4D23-B50A-55D80913483D}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
+		{80CB8FC3-1091-4D23-B50A-55D80913483D}.Debug|Any CPU.Build.0 = Debug|Any CPU
+		{80CB8FC3-1091-4D23-B50A-55D80913483D}.Release|Any CPU.ActiveCfg = Release|Any CPU
+		{80CB8FC3-1091-4D23-B50A-55D80913483D}.Release|Any CPU.Build.0 = Release|Any CPU
+		{CA09287F-308E-4FB6-AD84-15D21BCE9A55}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
+		{CA09287F-308E-4FB6-AD84-15D21BCE9A55}.Debug|Any CPU.Build.0 = Debug|Any CPU
+		{CA09287F-308E-4FB6-AD84-15D21BCE9A55}.Release|Any CPU.ActiveCfg = Release|Any CPU
+		{CA09287F-308E-4FB6-AD84-15D21BCE9A55}.Release|Any CPU.Build.0 = Release|Any CPU
 	EndGlobalSection
 	GlobalSection(SolutionProperties) = preSolution
 		HideSolutionNode = FALSE
 	EndGlobalSection
 	GlobalSection(NestedProjects) = preSolution
-		{92FF6597-1851-4DBA-B9E6-6F0743D033CE} = {8A657AC5-150F-4F55-8D9E-4F1A56D62D60}
-		{5B3EC5B3-D3E0-4346-9BF8-01B30B6FC2F4} = {8A657AC5-150F-4F55-8D9E-4F1A56D62D60}
+		{FD870577-C7EF-41B5-91F1-BBCDA0C1435D} = {8A889024-2C05-403E-A220-3778B804D032}
+		{80CB8FC3-1091-4D23-B50A-55D80913483D} = {8A889024-2C05-403E-A220-3778B804D032}
+		{CA09287F-308E-4FB6-AD84-15D21BCE9A55} = {8A889024-2C05-403E-A220-3778B804D032}
+	EndGlobalSection
+	GlobalSection(ExtensibilityGlobals) = postSolution
+		SolutionGuid = {5C6555B3-DB43-4620-A1CE-0AA9BC194C20}
 	EndGlobalSection
 EndGlobal
