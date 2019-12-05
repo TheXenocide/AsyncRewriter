@@ -9,7 +9,7 @@ using System.Threading.Tasks;
 namespace AsyncRewriter
 {
     [AttributeUsage(AttributeTargets.Method)]
-    internal class RewriteAsyncAttribute : Attribute
+    public class RewriteAsyncAttribute : Attribute
     {
         public RewriteAsyncAttribute(bool withOverride = false) { }
     }

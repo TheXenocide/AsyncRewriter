@@ -10,8 +10,6 @@ Project("{2150E333-8FDC-42A3-9474-1A3956D46DE8}") = "src", "src", "{8A889024-2C0
 EndProject
 Project("{9A19103F-16F7-4668-BE54-9A1E7A4F7556}") = "AsyncRewriter", "src\AsyncRewriter\AsyncRewriter.csproj", "{FD870577-C7EF-41B5-91F1-BBCDA0C1435D}"
 EndProject
-Project("{9A19103F-16F7-4668-BE54-9A1E7A4F7556}") = "dotnet-rewrite-async", "src\dotnet-rewrite-async\dotnet-rewrite-async.csproj", "{80CB8FC3-1091-4D23-B50A-55D80913483D}"
-EndProject
 Project("{2150E333-8FDC-42A3-9474-1A3956D46DE8}") = "Solution Items", "Solution Items", "{4536C5CE-FD43-49C4-9FD6-94179E2D4E4D}"
 EndProject
 Project("{9A19103F-16F7-4668-BE54-9A1E7A4F7556}") = "AsyncSolutionRewriter", "src\AsyncSolutionRewriter\AsyncSolutionRewriter.csproj", "{CA09287F-308E-4FB6-AD84-15D21BCE9A55}"
@@ -26,10 +24,6 @@ Global
 		{FD870577-C7EF-41B5-91F1-BBCDA0C1435D}.Debug|Any CPU.Build.0 = Debug|Any CPU
 		{FD870577-C7EF-41B5-91F1-BBCDA0C1435D}.Release|Any CPU.ActiveCfg = Release|Any CPU
 		{FD870577-C7EF-41B5-91F1-BBCDA0C1435D}.Release|Any CPU.Build.0 = Release|Any CPU
-		{80CB8FC3-1091-4D23-B50A-55D80913483D}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
-		{80CB8FC3-1091-4D23-B50A-55D80913483D}.Debug|Any CPU.Build.0 = Debug|Any CPU
-		{80CB8FC3-1091-4D23-B50A-55D80913483D}.Release|Any CPU.ActiveCfg = Release|Any CPU
-		{80CB8FC3-1091-4D23-B50A-55D80913483D}.Release|Any CPU.Build.0 = Release|Any CPU
 		{CA09287F-308E-4FB6-AD84-15D21BCE9A55}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
 		{CA09287F-308E-4FB6-AD84-15D21BCE9A55}.Debug|Any CPU.Build.0 = Debug|Any CPU
 		{CA09287F-308E-4FB6-AD84-15D21BCE9A55}.Release|Any CPU.ActiveCfg = Release|Any CPU
@@ -40,7 +34,6 @@ Global
 	EndGlobalSection
 	GlobalSection(NestedProjects) = preSolution
 		{FD870577-C7EF-41B5-91F1-BBCDA0C1435D} = {8A889024-2C05-403E-A220-3778B804D032}
-		{80CB8FC3-1091-4D23-B50A-55D80913483D} = {8A889024-2C05-403E-A220-3778B804D032}
 		{CA09287F-308E-4FB6-AD84-15D21BCE9A55} = {8A889024-2C05-403E-A220-3778B804D032}
 	EndGlobalSection
 	GlobalSection(ExtensibilityGlobals) = postSolution

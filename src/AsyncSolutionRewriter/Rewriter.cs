@@ -21,7 +21,7 @@ namespace AsyncRewriter
         /// <summary>
         /// Invocations of methods on these types never get rewritten to async
         /// </summary>
-        HashSet<ITypeSymbol> excludedTypesSet;
+        HashSet<ITypeSymbol> excludedTypesSet = new HashSet<ITypeSymbol>(); // TODO: This was null
 
         public bool GenerateConfigureAwait { get; set; } = false;
 
@@ -167,7 +167,7 @@ namespace AsyncRewriter
                                 .WithModifiers(clsGrp.Key.Modifiers)
                                 .WithTypeParameterList(clsGrp.Key.TypeParameterList)
                                 .WithMembers(SyntaxFactory.List<MemberDeclarationSyntax>(
-                                    clsGrp.Select(m => RewriteMethod(m, semanticModel, cancellationTokenSymbol))
+                                    clsGrp.Select(m => RewriteMethod(m, semanticModel, cancellationTokenSymbol, new HashSet<ISymbol>()))
                                 ))
                         )))
                     )
@@ -183,7 +183,7 @@ namespace AsyncRewriter
             }
         }
 
-        MethodDeclarationSyntax RewriteMethod(MethodDeclarationSyntax inMethodSyntax, SemanticModel semanticModel, ITypeSymbol cancellationTokenSymbol)
+        public MethodDeclarationSyntax RewriteMethod(MethodDeclarationSyntax inMethodSyntax, SemanticModel semanticModel, ITypeSymbol cancellationTokenSymbol, HashSet<ISymbol> symbolsToRewrite)
         {
             var inMethodSymbol = semanticModel.GetDeclaredSymbol(inMethodSyntax);
             // ASYNC_TODO: Find all references
@@ -195,13 +195,35 @@ namespace AsyncRewriter
             _log.Debug("  Rewriting method {0} to {1}", inMethodSymbol.Name, outMethodName);
 
             // Visit all method invocations inside the method, rewrite them to async if needed
-            var rewriter = new MethodInvocationRewriter(_log, semanticModel, excludedTypesSet, cancellationTokenSymbol, GenerateConfigureAwait);
+            var rewriter = new MethodInvocationRewriter(_log, semanticModel, excludedTypesSet, cancellationTokenSymbol, GenerateConfigureAwait, symbolsToRewrite);
             var outMethod = (MethodDeclarationSyntax)rewriter.Visit(inMethodSyntax);
 
             // Method signature
             outMethod = outMethod
-                .WithIdentifier(SyntaxFactory.Identifier(outMethodName))
-                .WithAttributeLists(new SyntaxList<AttributeListSyntax>());
+                .WithIdentifier(SyntaxFactory.Identifier(outMethodName));
+            if (outMethod.AttributeLists.Any(al => al.Attributes.Any(attr => attr.Name.ToString().Contains("RewriteAsync"))))
+            {
+                var newAttrList = new SyntaxList<AttributeListSyntax>();
+
+                foreach (var attrList in outMethod.AttributeLists)
+                {
+                    var curList = attrList;
+                    foreach (var attrItem in attrList.Attributes)
+                    {
+                        if (attrItem.Name.ToString().Contains("RewriteAsync"))
+                        {
+                            curList = curList.RemoveNode(attrItem, SyntaxRemoveOptions.KeepNoTrivia);
+                        }
+                    }
+
+                    if (curList.Attributes.Any())
+                    {
+                        newAttrList = newAttrList.Add(curList);
+                    }
+                }
+
+                outMethod = outMethod.WithAttributeLists(newAttrList);
+            }   
 
             if (inMethodSyntax.FirstAncestorOrSelf<TypeDeclarationSyntax>().Kind() == SyntaxKind.InterfaceDeclaration)
             {
@@ -247,9 +269,9 @@ namespace AsyncRewriter
                 i++;
             }
 
-            var attr = inMethodSymbol.GetAttributes().Single(a => a.AttributeClass.Name == "RewriteAsyncAttribute");
+            var attr = inMethodSymbol.GetAttributes().SingleOrDefault(a => a.AttributeClass.Name == "RewriteAsyncAttribute");
 
-            if (attr.ConstructorArguments.Length > 0 && (bool)attr.ConstructorArguments[0].Value)
+            if (attr != null && attr.ConstructorArguments.Length > 0 && (bool)attr.ConstructorArguments[0].Value)
             {
                 outMethod = outMethod.AddModifiers(SyntaxFactory.Token(SyntaxKind.OverrideKeyword));
             }
@@ -267,8 +289,10 @@ namespace AsyncRewriter
         readonly ParameterComparer _paramComparer;
         readonly ILogger _log;
 
+        readonly HashSet<ISymbol> _symbolsToRewrite;
+
         public MethodInvocationRewriter(ILogger log, SemanticModel model, HashSet<ITypeSymbol> excludeTypes,
-                                        ITypeSymbol cancellationTokenSymbol, bool generateConfigureAwait)
+                                        ITypeSymbol cancellationTokenSymbol, bool generateConfigureAwait, HashSet<ISymbol> symbolsToRewrite)
         {
             _log = log;
             _model = model;
@@ -276,6 +300,8 @@ namespace AsyncRewriter
             _generateConfigureAwait = generateConfigureAwait;
             _excludeTypes = excludeTypes;
             _paramComparer = new ParameterComparer();
+            
+            _symbolsToRewrite = symbolsToRewrite;
         }
 
         public override SyntaxNode VisitInvocationExpression(InvocationExpressionSyntax node)
@@ -300,7 +326,7 @@ namespace AsyncRewriter
 
             // Skip invocations of methods that don't have [RewriteAsync], or an Async
             // counterpart to them
-            if (syncSymbol.GetAttributes().Any(a => a.AttributeClass.Name == "RewriteAsyncAttribute"))
+            if (_symbolsToRewrite.Contains(syncSymbol) || syncSymbol.GetAttributes().Any(a => a.AttributeClass.Name == "RewriteAsyncAttribute"))
             {
                 // This is one of our methods, flagged for async rewriting.
                 // Find the proper position for the cancellation token

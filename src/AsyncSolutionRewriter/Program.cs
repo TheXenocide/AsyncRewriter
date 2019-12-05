@@ -5,6 +5,8 @@ using System.Linq;
 using System.Text;
 using System.Threading.Tasks;
 using Microsoft.Build.Locator;
+using Microsoft.CodeAnalysis;
+using Microsoft.CodeAnalysis.CSharp;
 using Microsoft.CodeAnalysis.CSharp.Syntax;
 using Microsoft.CodeAnalysis.FindSymbols;
 using Microsoft.CodeAnalysis.MSBuild;
@@ -49,6 +51,28 @@ namespace AsyncSolutionRewriter
             Console.WriteLine("Usage: AsyncSolutionRewriter.exe C:\\Path To The\\Solution.sln");
         }
 
+        static void WriteDualColor(string prefix, ConsoleColor prefixColor, string suffix, ConsoleColor suffixColor)
+        {
+            var originalColor = Console.ForegroundColor;
+            try
+            {
+                Console.ForegroundColor = prefixColor;
+                Console.Write(prefix);
+                Console.ForegroundColor = suffixColor;
+                Console.Write(suffix);
+            }
+            finally
+            {
+                Console.ForegroundColor = originalColor;
+            }
+        }
+
+        static void WriteDualColorLine(string prefix, ConsoleColor prefixColor, string suffix, ConsoleColor suffixColor)
+        {
+            WriteDualColor(prefix, prefixColor, suffix, suffixColor);
+            Console.WriteLine();
+        }
+
         static async Task RewriteSolution(string solutionPath)
         {
             var defaultVS = MSBuildLocator.RegisterDefaults();
@@ -69,38 +93,221 @@ namespace AsyncSolutionRewriter
             using (var workspace = MSBuildWorkspace.Create())
             {
                 var solution = await workspace.OpenSolutionAsync(solutionPath);
+                INamedTypeSymbol attr = null;
+                bool projectMissingRef = false;
 
                 foreach (var project in solution.Projects)
                 {
-                    Console.WriteLine();
-                    Console.WriteLine($"Project: {project.Name}");
-
                     var compilation = await project.GetCompilationAsync();
 
-                    var attr = compilation.GetTypeByMetadataName("AsyncRewriter.RewriteAsyncAttribute");
+                    var newAttr = compilation.GetTypeByMetadataName("AsyncRewriter.RewriteAsyncAttribute");
 
-                    var references = await SymbolFinder.FindReferencesAsync(attr, solution);
-
-                    foreach (ReferencedSymbol referencedSymbol in references)
+                    if (newAttr == null)
                     {
-                        foreach (ReferenceLocation location in referencedSymbol.Locations)
+                        projectMissingRef = true;
+                        Console.WriteLine($"Project: {project.Name}");
+                        Console.WriteLine("\tUnable to find RewriteAsyncAttribute in Project");
+                    }
+                    else
+                    {
+                        if (attr == null)
                         {
-                            var attrUsage = (await location.Document.GetSyntaxRootAsync())
-                                ?.FindToken(location.Location.SourceSpan.Start);
-
-                            if (attrUsage == null)
+                            attr = newAttr;
+                        }
+                        else
+                        {
+                            if (attr != newAttr)
                             {
-                                Console.WriteLine($"Unexpected Null Syntax Root: {location.Document.Name}, Start: {location.Location.SourceSpan.Start}");
-                            }
-                            else
-                            {
-                                var str = attrUsage.Value.Parent.FirstAncestorOrSelf<MemberDeclarationSyntax>().ToString();
-
-                                Console.WriteLine($"Found Usage of Attribute at {location.Document.Name}: {str}");
+                                Console.WriteLine("RewriteAsyncAttribute Symbols do not match across projects!");
                             }
                         }
                     }
                 }
+
+                if (projectMissingRef)
+                {
+                    Console.WriteLine();
+                    Console.WriteLine("Unable to find RewriteAsyncAttribute. Ensure all projects reference AsyncRewriter 0.9.0 Package.");
+                    return;
+                }
+
+                var references = await SymbolFinder.FindReferencesAsync(attr, solution);
+                var declarationsToRewrite = new HashSet<SyntaxNode>();
+                var symbolsToRewrite = new HashSet<ISymbol>();
+
+                var pendingHierarchiesToAnalyze = new Queue<ISymbol>();
+                await AnalyzeReferences(references, solution, declarationsToRewrite, pendingHierarchiesToAnalyze);
+
+                while (pendingHierarchiesToAnalyze.Count > 0)
+                {
+                    var symbol = pendingHierarchiesToAnalyze.Dequeue();
+                    symbolsToRewrite.Add(symbol);
+
+                    if (symbol.ContainingType.TypeKind == TypeKind.Interface)
+                    {
+                        Console.WriteLine();
+                        WriteDualColorLine("Finding Implementations of ", ConsoleColor.DarkBlue, symbol.ToString(), ConsoleColor.Cyan);
+
+                        var implementations = await SymbolFinder.FindImplementationsAsync(symbol, solution);
+                        await AnalyzeImplementations(implementations, solution, declarationsToRewrite, pendingHierarchiesToAnalyze);
+                    }
+                    // TODO: Overrides/Overridden
+                    // TODO: Lambdas?
+
+                    Console.WriteLine();
+                    WriteDualColorLine("Finding References of ", ConsoleColor.DarkGreen, symbol.ToString(), ConsoleColor.Cyan);
+
+                    references = await SymbolFinder.FindReferencesAsync(symbol, solution);
+                    await AnalyzeReferences(references, solution, declarationsToRewrite, pendingHierarchiesToAnalyze);
+                }
+
+                Console.WriteLine();
+                Console.WriteLine("**************************************");
+                Console.WriteLine();
+
+                var rewriter = new AsyncRewriter.Rewriter();
+
+                foreach (var toRewrite in declarationsToRewrite)
+                {
+                    if (toRewrite is MethodDeclarationSyntax methodToRewrite)
+                    {
+                        var compilation = await solution.GetDocument(methodToRewrite.SyntaxTree).Project.GetCompilationAsync();
+                        var cancellationTokenSymbol = compilation.GetTypeByMetadataName("System.Threading.CancellationToken");
+                        var rewritten = rewriter.RewriteMethod(methodToRewrite, compilation.GetSemanticModel(methodToRewrite.SyntaxTree), cancellationTokenSymbol, symbolsToRewrite);
+
+                        var prevColor = Console.ForegroundColor;
+
+                        Console.ForegroundColor = ConsoleColor.DarkGreen;
+                        Console.WriteLine("--------------------------");
+                        Console.WriteLine();
+                        Console.ForegroundColor = ConsoleColor.Gray;
+                        Console.WriteLine("BEFORE: ");
+                        Console.WriteLine(methodToRewrite.ToString());
+                        Console.WriteLine();
+                        Console.ForegroundColor = ConsoleColor.Green;
+                        //Console.WriteLine("//////////////////////////");
+                        Console.ForegroundColor = ConsoleColor.White;
+                        Console.WriteLine();
+                        Console.WriteLine("AFTER: ");
+                        Console.WriteLine(rewritten.NormalizeWhitespace().ToString());
+                        Console.WriteLine();
+                        Console.ForegroundColor = prevColor;
+                    }
+                    else
+                    {
+                        var todoRewrite = toRewrite.WithLeadingTrivia(toRewrite.GetLeadingTrivia().Add(SyntaxFactory.Comment("// REWRITE_TODO: Manually adjust to async!")));
+
+                        var prevColor = Console.ForegroundColor;
+                        Console.ForegroundColor = ConsoleColor.DarkRed;
+                        Console.WriteLine("--------------------------");
+                        Console.WriteLine();
+                        Console.ForegroundColor = ConsoleColor.Gray;
+                        Console.WriteLine("BEFORE: ");
+                        Console.WriteLine(toRewrite.ToFullString());
+                        Console.WriteLine();
+                        Console.ForegroundColor = ConsoleColor.Green;
+                        //Console.WriteLine("//////////////////////////");
+                        Console.ForegroundColor = ConsoleColor.White;
+                        Console.WriteLine();
+                        Console.WriteLine("AFTER: ");
+                        Console.WriteLine(todoRewrite.NormalizeWhitespace().ToFullString());
+                        Console.WriteLine();
+                        Console.ForegroundColor = prevColor;
+                    }
+                }
+                
+                //foreach (var toRewrite in symbolsToRewrite)
+                //{
+                //    Console.WriteLine($"{toRewrite.ToString()}");
+                //    Console.WriteLine();
+                //}
+            }
+        }
+
+        private static async Task AnalyzeImplementations(IEnumerable<ISymbol> implementations, Solution solution, HashSet<SyntaxNode> declarationsToRewrite, Queue<ISymbol> pendingHierarchiesToAnalyze)
+        {
+            foreach (var implementation in implementations)
+            {
+                var implementationDeclaration = await implementation.DeclaringSyntaxReferences.Single().GetSyntaxAsync();
+
+                if (implementationDeclaration is MemberDeclarationSyntax implementationMemberDeclaration)
+                {
+                    await AnalyzeMemberDeclaration(implementationMemberDeclaration, solution, declarationsToRewrite, pendingHierarchiesToAnalyze);
+                }
+                else
+                {
+                    WriteDualColorLine("Unexpected Implementation Syntax: ", ConsoleColor.Red, implementationDeclaration.ToString(), ConsoleColor.DarkGray);
+                }
+            }
+        }
+
+        private static async Task AnalyzeReferences(IEnumerable<ReferencedSymbol> references, Solution solution, HashSet<SyntaxNode> declarationsToRewrite, Queue<ISymbol> pendingHierarchiesToAnalyze)
+        {
+            foreach (ReferencedSymbol referencedSymbol in references)
+            {
+                foreach (ReferenceLocation location in referencedSymbol.Locations)
+                {
+                    var refUsage = (await location.Document.GetSyntaxRootAsync())
+                        ?.FindToken(location.Location.SourceSpan.Start);
+
+                    if (refUsage == null)
+                    {
+                        WriteDualColor("Unexpected Null Syntax Root: ", ConsoleColor.DarkRed, location.Document.Name, ConsoleColor.Red);
+                        WriteDualColorLine(", Start: ", ConsoleColor.DarkRed, location.Location.SourceSpan.Start.ToString(), ConsoleColor.Red);
+                    }
+                    else
+                    {
+                        var declarationToAnalyze = refUsage.Value.Parent.FirstAncestorOrSelf<MemberDeclarationSyntax>();
+
+                        if (declarationToAnalyze is FieldDeclarationSyntax fieldDeclarationToAnalyze)
+                        {
+                            var refAncestors = refUsage.Value.Parent.Ancestors().ToHashSet();
+
+                            var variableDeclarator = fieldDeclarationToAnalyze.Declaration.Variables.Single(declarator => refAncestors.Contains(declarator));
+
+                            await AnalyzeMemberDeclaration(variableDeclarator, solution, declarationsToRewrite, pendingHierarchiesToAnalyze);
+
+                            //if (declarationsToRewrite.Add(variableDeclarator)) 
+
+                            //var semanticModel = (await solution.GetDocument(variableDeclarator.SyntaxTree).Project.GetCompilationAsync()).GetSemanticModel(variableDeclarator.SyntaxTree);
+                            //var symbolToAnalyze = semanticModel.GetDeclaredSymbol(variableDeclarator);
+
+                            //var fieldReferences = await SymbolFinder.FindReferencesAsync(symbolToAnalyze, solution);
+
+                            //WriteDualColorLine("TEST; Field Declaration: ", ConsoleColor.DarkYellow, symbolToAnalyze.ToString(), ConsoleColor.Magenta);
+
+                            //foreach (var fieldRef in fieldReferences)
+                            //{
+                            //    foreach (var fieldRefLocation in fieldRef.Locations)
+                            //    {
+                            //        var fieldRefUsage = (await fieldRefLocation.Document.GetSyntaxRootAsync())
+                            //            ?.FindToken(fieldRefLocation.Location.SourceSpan.Start);
+
+                            //        var fieldRefMemDecl = fieldRefUsage.Value.Parent.FirstAncestorOrSelf<MemberDeclarationSyntax>();
+
+                            //        WriteDualColorLine("TEST; Field Ref: ", ConsoleColor.Yellow, fieldRefMemDecl.ToString(), ConsoleColor.Magenta);
+                            //    }
+                            //}
+                        }
+                        else
+                        {
+                            await AnalyzeMemberDeclaration(declarationToAnalyze, solution, declarationsToRewrite, pendingHierarchiesToAnalyze);
+                        }
+                    }
+                }
+            }
+        }
+
+        private static async Task AnalyzeMemberDeclaration(SyntaxNode declarationToAnalyze, Solution solution, HashSet<SyntaxNode> declarationsToRewrite, Queue<ISymbol> pendingHierarchiesToAnalyze)
+        {
+            if (declarationsToRewrite.Add(declarationToAnalyze))
+            {
+                var semanticModel = (await solution.GetDocument(declarationToAnalyze.SyntaxTree).Project.GetCompilationAsync()).GetSemanticModel(declarationToAnalyze.SyntaxTree);
+                var symbolToAnalyze = semanticModel.GetDeclaredSymbol(declarationToAnalyze);
+
+                WriteDualColorLine("Adding Symbol to Analysis: ", ConsoleColor.DarkCyan, symbolToAnalyze.ToString(), ConsoleColor.Cyan);
+
+                pendingHierarchiesToAnalyze.Enqueue(symbolToAnalyze);
             }
         }
     }
