@@ -258,16 +258,16 @@ namespace AsyncRewriter
             );
 
             // Remove the override and new attributes. Seems like the clean .Remove above doesn't work...
-            for (var i = 0; i < outMethod.Modifiers.Count;)
-            {
-                var text = outMethod.Modifiers[i].Text;
-                if (text == "override" || text == "new")
-                {
-                    outMethod = outMethod.WithModifiers(outMethod.Modifiers.RemoveAt(i));
-                    continue;
-                }
-                i++;
-            }
+            //for (var i = 0; i < outMethod.Modifiers.Count;)
+            //{
+            //    var text = outMethod.Modifiers[i].Text;
+            //    if (text == "override" || text == "new")
+            //    {
+            //        outMethod = outMethod.WithModifiers(outMethod.Modifiers.RemoveAt(i));
+            //        continue;
+            //    }
+            //    i++;
+            //}
 
             var attr = inMethodSymbol.GetAttributes().SingleOrDefault(a => a.AttributeClass.Name == "RewriteAsyncAttribute");
 
