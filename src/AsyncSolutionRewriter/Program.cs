@@ -153,6 +153,10 @@ namespace AsyncSolutionRewriter
                     }
                     // TODO: Overrides/Overridden
                     // TODO: Lambdas?
+                    // TODO: Add REWRITE_TODO for: all property accessors reading properties that meant to be rewritten, also add the rewrite attribute or a comment to the properties themselves
+                    //       also add to all un-rewritable field accessors (e.g. Lazy<T>)
+                    // TODO: Write Cancelation token as optional = default.
+                    // TODO: Improve optional/params/named parameter handling
 
                     Console.WriteLine();
                     WriteDualColorLine("Finding References of ", ConsoleColor.DarkGreen, symbol.ToString(), ConsoleColor.Cyan);
