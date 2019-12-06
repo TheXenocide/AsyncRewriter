@@ -133,7 +133,7 @@ namespace AsyncSolutionRewriter
 
                 var references = await SymbolFinder.FindReferencesAsync(attr, solution);
                 var declarationsToRewrite = new HashSet<SyntaxNode>();
-                var symbolsToRewrite = new HashSet<ISymbol>();
+                var symbolsToRewrite = new HashSet<string>();
 
                 var pendingHierarchiesToAnalyze = new Queue<ISymbol>();
                 await AnalyzeReferences(references, solution, declarationsToRewrite, pendingHierarchiesToAnalyze);
@@ -141,7 +141,7 @@ namespace AsyncSolutionRewriter
                 while (pendingHierarchiesToAnalyze.Count > 0)
                 {
                     var symbol = pendingHierarchiesToAnalyze.Dequeue();
-                    symbolsToRewrite.Add(symbol);
+                    symbolsToRewrite.Add(symbol.ToString());
 
                     if (symbol.ContainingType.TypeKind == TypeKind.Interface)
                     {

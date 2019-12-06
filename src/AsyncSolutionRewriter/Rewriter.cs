@@ -167,7 +167,7 @@ namespace AsyncRewriter
                                 .WithModifiers(clsGrp.Key.Modifiers)
                                 .WithTypeParameterList(clsGrp.Key.TypeParameterList)
                                 .WithMembers(SyntaxFactory.List<MemberDeclarationSyntax>(
-                                    clsGrp.Select(m => RewriteMethod(m, semanticModel, cancellationTokenSymbol, new HashSet<ISymbol>()))
+                                    clsGrp.Select(m => RewriteMethod(m, semanticModel, cancellationTokenSymbol, new HashSet<string>()))
                                 ))
                         )))
                     )
@@ -183,7 +183,7 @@ namespace AsyncRewriter
             }
         }
 
-        public MethodDeclarationSyntax RewriteMethod(MethodDeclarationSyntax inMethodSyntax, SemanticModel semanticModel, ITypeSymbol cancellationTokenSymbol, HashSet<ISymbol> symbolsToRewrite)
+        public MethodDeclarationSyntax RewriteMethod(MethodDeclarationSyntax inMethodSyntax, SemanticModel semanticModel, ITypeSymbol cancellationTokenSymbol, HashSet<string> symbolsToRewrite)
         {
             var inMethodSymbol = semanticModel.GetDeclaredSymbol(inMethodSyntax);
             // ASYNC_TODO: Find all references
@@ -289,10 +289,10 @@ namespace AsyncRewriter
         readonly ParameterComparer _paramComparer;
         readonly ILogger _log;
 
-        readonly HashSet<ISymbol> _symbolsToRewrite;
+        readonly HashSet<string> _symbolsToRewrite;
 
         public MethodInvocationRewriter(ILogger log, SemanticModel model, HashSet<ITypeSymbol> excludeTypes,
-                                        ITypeSymbol cancellationTokenSymbol, bool generateConfigureAwait, HashSet<ISymbol> symbolsToRewrite)
+                                        ITypeSymbol cancellationTokenSymbol, bool generateConfigureAwait, HashSet<string> symbolsToRewrite)
         {
             _log = log;
             _model = model;
@@ -326,7 +326,7 @@ namespace AsyncRewriter
 
             // Skip invocations of methods that don't have [RewriteAsync], or an Async
             // counterpart to them
-            if (_symbolsToRewrite.Contains(syncSymbol) || syncSymbol.GetAttributes().Any(a => a.AttributeClass.Name == "RewriteAsyncAttribute"))
+            if (_symbolsToRewrite.Contains(syncSymbol.ToString()) || syncSymbol.GetAttributes().Any(a => a.AttributeClass.Name == "RewriteAsyncAttribute"))
             {
                 // This is one of our methods, flagged for async rewriting.
                 // Find the proper position for the cancellation token
