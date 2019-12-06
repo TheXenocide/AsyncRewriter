@@ -157,6 +157,7 @@ namespace AsyncSolutionRewriter
                     //       also add to all un-rewritable field accessors (e.g. Lazy<T>)
                     // TODO: Write Cancelation token as optional = default.
                     // TODO: Improve optional/params/named parameter handling
+                    // TODO: Do NOT rewrite already async methods
 
                     Console.WriteLine();
                     WriteDualColorLine("Finding References of ", ConsoleColor.DarkGreen, symbol.ToString(), ConsoleColor.Cyan);
