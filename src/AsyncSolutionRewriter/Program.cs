@@ -15,6 +15,25 @@ namespace AsyncSolutionRewriter
 {
     class Program
     {
+
+        static int methodsToRewrite = 0;
+        static int manualRewrite = 0;
+        static int nullDocumentsFromDeclaration = 0;
+        static int nullCompilationFromDeclaration = 0;
+        static int nullSymbolsFromDeclaration = 0;
+        static int symbolsWithNoContainingType = 0;
+        static int unhandledFieldDeclarations = 0;
+        static int unhandledReferenceAnalyses = 0;
+        static int rewriteExceptions = 0;
+
+        //static Dictionary<string, string>
+        
+
+        static HashSet<SyntaxNode> declarationsToRewrite = new HashSet<SyntaxNode>();
+        static HashSet<string> symbolsToRewrite = new HashSet<string>();
+
+        static Queue<ISymbol> pendingHierarchiesToAnalyze = new Queue<ISymbol>();
+
         static async Task Main(string[] args)
         {
             try
@@ -37,13 +56,23 @@ namespace AsyncSolutionRewriter
                 Console.WriteLine(ex.ToString());
                 Console.ForegroundColor = prevColor;
             }
-#if DEBUG
+
             finally
             {
+                Console.WriteLine();
+                WriteDualColorLine("Methods to Rewrite: ", ConsoleColor.DarkGreen, methodsToRewrite.ToString(), ConsoleColor.Green);
+                WriteDualColorLine("Manual Rewrites: ", ConsoleColor.DarkYellow, manualRewrite.ToString(), ConsoleColor.Yellow);
+                WriteDualColorLine("Null Symbols From Declaration: ", ConsoleColor.DarkRed, nullSymbolsFromDeclaration.ToString(), ConsoleColor.Red);
+                WriteDualColorLine("Symbols With No Containing Type: ", ConsoleColor.DarkRed, symbolsWithNoContainingType.ToString(), ConsoleColor.Red);
+                WriteDualColorLine("Unhandled Field Declarations: ", ConsoleColor.DarkRed, unhandledFieldDeclarations.ToString(), ConsoleColor.Red);
+                WriteDualColorLine("Declarations Set: ", ConsoleColor.DarkBlue, declarationsToRewrite.Count.ToString(), ConsoleColor.Blue);
+                WriteDualColorLine("Symbol Set: ", ConsoleColor.DarkBlue, symbolsToRewrite.Count.ToString(), ConsoleColor.Blue);
+                WriteDualColorLine("Pending Queue: ", ConsoleColor.DarkYellow, pendingHierarchiesToAnalyze.Count.ToString(), ConsoleColor.Yellow);
+#if DEBUG
                 Console.WriteLine("Press Enter to Exit");
                 Console.ReadLine();
-            }
 #endif
+            }
         }
 
         static void WriteUsage()
@@ -51,7 +80,7 @@ namespace AsyncSolutionRewriter
             Console.WriteLine("Usage: AsyncSolutionRewriter.exe C:\\Path To The\\Solution.sln");
         }
 
-        static void WriteDualColor(string prefix, ConsoleColor prefixColor, string suffix, ConsoleColor suffixColor)
+        public static void WriteDualColor(string prefix, ConsoleColor prefixColor, string suffix, ConsoleColor suffixColor)
         {
             var originalColor = Console.ForegroundColor;
             try
@@ -67,7 +96,7 @@ namespace AsyncSolutionRewriter
             }
         }
 
-        static void WriteDualColorLine(string prefix, ConsoleColor prefixColor, string suffix, ConsoleColor suffixColor)
+        public static void WriteDualColorLine(string prefix, ConsoleColor prefixColor, string suffix, ConsoleColor suffixColor)
         {
             WriteDualColor(prefix, prefixColor, suffix, suffixColor);
             Console.WriteLine();
@@ -128,14 +157,14 @@ namespace AsyncSolutionRewriter
                 {
                     Console.WriteLine();
                     Console.WriteLine("Unable to find RewriteAsyncAttribute. Ensure all projects reference AsyncRewriter 0.9.0 Package.");
-                    return;
+                    if (attr == null) return;
                 }
 
                 var references = await SymbolFinder.FindReferencesAsync(attr, solution);
-                var declarationsToRewrite = new HashSet<SyntaxNode>();
-                var symbolsToRewrite = new HashSet<string>();
+                //var declarationsToRewrite = new HashSet<SyntaxNode>();
+                //var symbolsToRewrite = new HashSet<string>();
 
-                var pendingHierarchiesToAnalyze = new Queue<ISymbol>();
+                //var pendingHierarchiesToAnalyze = new Queue<ISymbol>();
                 await AnalyzeReferences(references, solution, declarationsToRewrite, pendingHierarchiesToAnalyze);
 
                 while (pendingHierarchiesToAnalyze.Count > 0)
@@ -143,20 +172,29 @@ namespace AsyncSolutionRewriter
                     var symbol = pendingHierarchiesToAnalyze.Dequeue();
                     symbolsToRewrite.Add(symbol.ToString());
 
-                    if (symbol.ContainingType.TypeKind == TypeKind.Interface)
+                    if (symbol.ContainingType != null)
                     {
-                        Console.WriteLine();
-                        WriteDualColorLine("Finding Implementations of ", ConsoleColor.DarkBlue, symbol.ToString(), ConsoleColor.Cyan);
+                        if (symbol.ContainingType.TypeKind == TypeKind.Interface)
+                        {
+                            Console.WriteLine();
+                            WriteDualColorLine("Finding Implementations of ", ConsoleColor.DarkBlue, symbol.ToString(), ConsoleColor.Cyan);
 
-                        var implementations = await SymbolFinder.FindImplementationsAsync(symbol, solution);
-                        await AnalyzeImplementations(implementations, solution, declarationsToRewrite, pendingHierarchiesToAnalyze);
+                            var implementations = await SymbolFinder.FindImplementationsAsync(symbol, solution);
+                            await AnalyzeImplementations(implementations, solution, declarationsToRewrite, pendingHierarchiesToAnalyze);
+                        }
                     }
+                    else
+                    {
+                        symbolsWithNoContainingType++;
+                    }
+
                     // TODO: Overrides/Overridden
+                    //  TODO:   System Interfaces/Overrides (ICollection, Equals, ToString, GetHashCode, IComparable)
                     // TODO: Lambdas?
                     // TODO: Add REWRITE_TODO for: all property accessors reading properties that meant to be rewritten, also add the rewrite attribute or a comment to the properties themselves
                     //       also add to all un-rewritable field accessors (e.g. Lazy<T>)
-                    // TODO: Write Cancelation token as optional = default.
-                    // TODO: Improve optional/params/named parameter handling
+                    // TODO: Write Cancelation token as optional = default???
+                    // TODO: Improve optional/params/named parameter handling???
                     // TODO: Do NOT rewrite already async methods
 
                     Console.WriteLine();
@@ -174,49 +212,70 @@ namespace AsyncSolutionRewriter
 
                 foreach (var toRewrite in declarationsToRewrite)
                 {
-                    if (toRewrite is MethodDeclarationSyntax methodToRewrite)
+                    try
                     {
-                        var compilation = await solution.GetDocument(methodToRewrite.SyntaxTree).Project.GetCompilationAsync();
-                        var cancellationTokenSymbol = compilation.GetTypeByMetadataName("System.Threading.CancellationToken");
-                        var rewritten = rewriter.RewriteMethod(methodToRewrite, compilation.GetSemanticModel(methodToRewrite.SyntaxTree), cancellationTokenSymbol, symbolsToRewrite);
+                        if (toRewrite is MethodDeclarationSyntax methodToRewrite)
+                        {
+                            methodsToRewrite++;
 
-                        var prevColor = Console.ForegroundColor;
+                            var compilation = await solution.GetDocument(methodToRewrite.SyntaxTree).Project.GetCompilationAsync();
+                            var cancellationTokenSymbol = compilation.GetTypeByMetadataName("System.Threading.CancellationToken");
+                            var rewritten = rewriter.RewriteMethod(methodToRewrite, compilation.GetSemanticModel(methodToRewrite.SyntaxTree), cancellationTokenSymbol, symbolsToRewrite);
 
-                        Console.ForegroundColor = ConsoleColor.DarkGreen;
-                        Console.WriteLine("--------------------------");
-                        Console.WriteLine();
-                        Console.ForegroundColor = ConsoleColor.Gray;
-                        Console.WriteLine("BEFORE: ");
-                        Console.WriteLine(methodToRewrite.ToString());
-                        Console.WriteLine();
-                        Console.ForegroundColor = ConsoleColor.Green;
-                        //Console.WriteLine("//////////////////////////");
-                        Console.ForegroundColor = ConsoleColor.White;
-                        Console.WriteLine();
-                        Console.WriteLine("AFTER: ");
-                        Console.WriteLine(rewritten.NormalizeWhitespace().ToString());
-                        Console.WriteLine();
-                        Console.ForegroundColor = prevColor;
-                    }
-                    else
+                            var prevColor = Console.ForegroundColor;
+
+                            Console.ForegroundColor = ConsoleColor.DarkGreen;
+                            Console.WriteLine("--------------------------");
+                            Console.WriteLine();
+                            Console.ForegroundColor = ConsoleColor.Gray;
+                            Console.WriteLine("BEFORE: ");
+                            Console.WriteLine(methodToRewrite.ToString());
+                            Console.WriteLine();
+                            Console.ForegroundColor = ConsoleColor.Green;
+                            //Console.WriteLine("//////////////////////////");
+                            Console.ForegroundColor = ConsoleColor.White;
+                            Console.WriteLine();
+                            Console.WriteLine("AFTER: ");
+                            Console.WriteLine(rewritten.NormalizeWhitespace().ToString());
+                            Console.WriteLine();
+                            Console.ForegroundColor = prevColor;
+                        }
+                        else
+                        {
+                            manualRewrite++;
+
+                            var todoRewrite = toRewrite.WithLeadingTrivia(toRewrite.GetLeadingTrivia().Add(SyntaxFactory.Comment("// REWRITE_TODO: Manually adjust to async!")));
+
+                            var prevColor = Console.ForegroundColor;
+                            Console.ForegroundColor = ConsoleColor.DarkRed;
+                            Console.WriteLine("--------------------------");
+                            Console.WriteLine();
+                            Console.ForegroundColor = ConsoleColor.Gray;
+                            Console.WriteLine("BEFORE: ");
+                            Console.WriteLine(toRewrite.ToFullString());
+                            Console.WriteLine();
+                            Console.ForegroundColor = ConsoleColor.Green;
+                            //Console.WriteLine("//////////////////////////");
+                            Console.ForegroundColor = ConsoleColor.White;
+                            Console.WriteLine();
+                            Console.WriteLine("AFTER: ");
+                            Console.WriteLine(todoRewrite.NormalizeWhitespace().ToFullString());
+                            Console.WriteLine();
+                            Console.ForegroundColor = prevColor;
+                        }
+                    } 
+                    catch (Exception ex)
                     {
-                        var todoRewrite = toRewrite.WithLeadingTrivia(toRewrite.GetLeadingTrivia().Add(SyntaxFactory.Comment("// REWRITE_TODO: Manually adjust to async!")));
-
+                        rewriteExceptions++;
+                        
+                        WriteDualColorLine("Exception Rewriting Declaration: ", ConsoleColor.DarkRed, toRewrite.ToString(), ConsoleColor.Red);
+                        
                         var prevColor = Console.ForegroundColor;
-                        Console.ForegroundColor = ConsoleColor.DarkRed;
-                        Console.WriteLine("--------------------------");
-                        Console.WriteLine();
-                        Console.ForegroundColor = ConsoleColor.Gray;
-                        Console.WriteLine("BEFORE: ");
-                        Console.WriteLine(toRewrite.ToFullString());
-                        Console.WriteLine();
-                        Console.ForegroundColor = ConsoleColor.Green;
-                        //Console.WriteLine("//////////////////////////");
-                        Console.ForegroundColor = ConsoleColor.White;
-                        Console.WriteLine();
-                        Console.WriteLine("AFTER: ");
-                        Console.WriteLine(todoRewrite.NormalizeWhitespace().ToFullString());
-                        Console.WriteLine();
+                        
+                        Console.ForegroundColor = ConsoleColor.Red;
+                        
+                        Console.WriteLine(ex.ToString());
+                        
                         Console.ForegroundColor = prevColor;
                     }
                 }
@@ -253,51 +312,83 @@ namespace AsyncSolutionRewriter
                 foreach (ReferenceLocation location in referencedSymbol.Locations)
                 {
                     var refUsage = (await location.Document.GetSyntaxRootAsync())
-                        ?.FindToken(location.Location.SourceSpan.Start);
-
-                    if (refUsage == null)
+                            ?.FindToken(location.Location.SourceSpan.Start);
+                    try
                     {
-                        WriteDualColor("Unexpected Null Syntax Root: ", ConsoleColor.DarkRed, location.Document.Name, ConsoleColor.Red);
-                        WriteDualColorLine(", Start: ", ConsoleColor.DarkRed, location.Location.SourceSpan.Start.ToString(), ConsoleColor.Red);
-                    }
-                    else
-                    {
-                        var declarationToAnalyze = refUsage.Value.Parent.FirstAncestorOrSelf<MemberDeclarationSyntax>();
-
-                        if (declarationToAnalyze is FieldDeclarationSyntax fieldDeclarationToAnalyze)
+                        
+                        if (refUsage == null)
                         {
-                            var refAncestors = refUsage.Value.Parent.Ancestors().ToHashSet();
-
-                            var variableDeclarator = fieldDeclarationToAnalyze.Declaration.Variables.Single(declarator => refAncestors.Contains(declarator));
-
-                            await AnalyzeMemberDeclaration(variableDeclarator, solution, declarationsToRewrite, pendingHierarchiesToAnalyze);
-
-                            //if (declarationsToRewrite.Add(variableDeclarator)) 
-
-                            //var semanticModel = (await solution.GetDocument(variableDeclarator.SyntaxTree).Project.GetCompilationAsync()).GetSemanticModel(variableDeclarator.SyntaxTree);
-                            //var symbolToAnalyze = semanticModel.GetDeclaredSymbol(variableDeclarator);
-
-                            //var fieldReferences = await SymbolFinder.FindReferencesAsync(symbolToAnalyze, solution);
-
-                            //WriteDualColorLine("TEST; Field Declaration: ", ConsoleColor.DarkYellow, symbolToAnalyze.ToString(), ConsoleColor.Magenta);
-
-                            //foreach (var fieldRef in fieldReferences)
-                            //{
-                            //    foreach (var fieldRefLocation in fieldRef.Locations)
-                            //    {
-                            //        var fieldRefUsage = (await fieldRefLocation.Document.GetSyntaxRootAsync())
-                            //            ?.FindToken(fieldRefLocation.Location.SourceSpan.Start);
-
-                            //        var fieldRefMemDecl = fieldRefUsage.Value.Parent.FirstAncestorOrSelf<MemberDeclarationSyntax>();
-
-                            //        WriteDualColorLine("TEST; Field Ref: ", ConsoleColor.Yellow, fieldRefMemDecl.ToString(), ConsoleColor.Magenta);
-                            //    }
-                            //}
+                            WriteDualColor("Unexpected Null Syntax Root: ", ConsoleColor.DarkRed, location.Document.Name, ConsoleColor.Red);
+                            WriteDualColorLine(", Start: ", ConsoleColor.DarkRed, location.Location.SourceSpan.Start.ToString(), ConsoleColor.Red);
                         }
                         else
                         {
-                            await AnalyzeMemberDeclaration(declarationToAnalyze, solution, declarationsToRewrite, pendingHierarchiesToAnalyze);
+                            var declarationToAnalyze = refUsage.Value.Parent.FirstAncestorOrSelf<MemberDeclarationSyntax>();
+
+                            if (declarationToAnalyze is FieldDeclarationSyntax fieldDeclarationToAnalyze)
+                            {
+                                var refAncestors = refUsage.Value.Parent.Ancestors().ToHashSet();
+
+                                try
+                                {
+                                    var variableDeclarator = fieldDeclarationToAnalyze.Declaration.Variables.Single(declarator => refAncestors.Contains(declarator));
+
+                                    await AnalyzeMemberDeclaration(variableDeclarator, solution, declarationsToRewrite, pendingHierarchiesToAnalyze);
+
+                                }
+                                catch (Exception ex)
+                                {
+                                    unhandledFieldDeclarations++;
+
+                                    var prevColor = Console.ForegroundColor;
+
+                                    Console.WriteLine();
+                                    WriteDualColorLine("Exception Analyzing Field Declaration: ", ConsoleColor.DarkRed, fieldDeclarationToAnalyze.ToString(), ConsoleColor.DarkYellow);
+                                    Console.ForegroundColor = ConsoleColor.Red;
+                                    Console.WriteLine(ex.ToString());
+                                    Console.ForegroundColor = prevColor;
+                                    Console.WriteLine();
+                                }
+                                //if (declarationsToRewrite.Add(variableDeclarator)) 
+
+                                //var semanticModel = (await solution.GetDocument(variableDeclarator.SyntaxTree).Project.GetCompilationAsync()).GetSemanticModel(variableDeclarator.SyntaxTree);
+                                //var symbolToAnalyze = semanticModel.GetDeclaredSymbol(variableDeclarator);
+
+                                //var fieldReferences = await SymbolFinder.FindReferencesAsync(symbolToAnalyze, solution);
+
+                                //WriteDualColorLine("TEST; Field Declaration: ", ConsoleColor.DarkYellow, symbolToAnalyze.ToString(), ConsoleColor.Magenta);
+
+                                //foreach (var fieldRef in fieldReferences)
+                                //{
+                                //    foreach (var fieldRefLocation in fieldRef.Locations)
+                                //    {
+                                //        var fieldRefUsage = (await fieldRefLocation.Document.GetSyntaxRootAsync())
+                                //            ?.FindToken(fieldRefLocation.Location.SourceSpan.Start);
+
+                                //        var fieldRefMemDecl = fieldRefUsage.Value.Parent.FirstAncestorOrSelf<MemberDeclarationSyntax>();
+
+                                //        WriteDualColorLine("TEST; Field Ref: ", ConsoleColor.Yellow, fieldRefMemDecl.ToString(), ConsoleColor.Magenta);
+                                //    }
+                                //}
+                            }
+                            else
+                            {
+                                await AnalyzeMemberDeclaration(declarationToAnalyze, solution, declarationsToRewrite, pendingHierarchiesToAnalyze);
+                            }
                         }
+                    }
+                    catch (Exception ex)
+                    {
+                        unhandledReferenceAnalyses++;
+
+                        var prevColor = Console.ForegroundColor;
+
+                        Console.WriteLine();
+                        WriteDualColorLine("Exception Analyzing Reference: ", ConsoleColor.DarkRed, refUsage?.ToString() ?? "NULL TOKEN", ConsoleColor.DarkYellow);
+                        Console.ForegroundColor = ConsoleColor.Red;
+                        Console.WriteLine(ex.ToString());
+                        Console.ForegroundColor = prevColor;
+                        Console.WriteLine();
                     }
                 }
             }
@@ -307,12 +398,44 @@ namespace AsyncSolutionRewriter
         {
             if (declarationsToRewrite.Add(declarationToAnalyze))
             {
-                var semanticModel = (await solution.GetDocument(declarationToAnalyze.SyntaxTree).Project.GetCompilationAsync()).GetSemanticModel(declarationToAnalyze.SyntaxTree);
-                var symbolToAnalyze = semanticModel.GetDeclaredSymbol(declarationToAnalyze);
+                var document = solution.GetDocument(declarationToAnalyze.SyntaxTree);
 
-                WriteDualColorLine("Adding Symbol to Analysis: ", ConsoleColor.DarkCyan, symbolToAnalyze.ToString(), ConsoleColor.Cyan);
+                if (document != null)
+                {
+                    var project = document.Project;
+                    var compilation = await project.GetCompilationAsync();
 
-                pendingHierarchiesToAnalyze.Enqueue(symbolToAnalyze);
+                    if (compilation != null)
+                    {
+                        var semanticModel = compilation.GetSemanticModel(declarationToAnalyze.SyntaxTree);
+                        var symbolToAnalyze = semanticModel.GetDeclaredSymbol(declarationToAnalyze);
+
+                        if (symbolToAnalyze != null)
+                        {
+                            WriteDualColorLine("Adding Symbol to Analysis: ", ConsoleColor.DarkCyan, symbolToAnalyze.ToString(), ConsoleColor.Cyan);
+                            pendingHierarchiesToAnalyze.Enqueue(symbolToAnalyze);
+                        }
+                        else
+                        {
+                            nullSymbolsFromDeclaration++;
+                            WriteDualColorLine("Unable to Find Symbol for Declaration: ", ConsoleColor.DarkRed, declarationToAnalyze.ToString(), ConsoleColor.DarkYellow);
+                            // TODO: Create list of declarations to check back on
+                        }
+                    }
+                    else
+                    {
+                        nullCompilationFromDeclaration++;
+                        WriteDualColorLine("Unable to Find Compilation for Declaration: ", ConsoleColor.DarkRed, declarationToAnalyze.ToString(), ConsoleColor.DarkYellow);
+                        // TODO: Create list of declarations to check back on
+                    }
+                }
+                else
+                {
+                    // NOTE: If it's the document we can probably get this from the location of the reference in the calling method
+                    nullDocumentsFromDeclaration++;
+                    WriteDualColorLine("Unable to Find Document for Declaration: ", ConsoleColor.DarkRed, declarationToAnalyze.ToString(), ConsoleColor.DarkYellow);
+                    // TODO: Create list of declarations to check back on
+                }
             }
         }
     }

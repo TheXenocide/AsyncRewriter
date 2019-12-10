@@ -2,7 +2,7 @@
   "profiles": {
     "AsyncSolutionRewriter": {
       "commandName": "Project",
-      "commandLineArgs": "C:\\Users\\jdiorio\\source\\repos\\RewriteSample\\RewriteSample.sln"
+      "commandLineArgs": "C:\\Dev\\BST10-All-NoTests.sln"
     }
   }
 }

@@ -5,6 +5,7 @@ using System.IO;
 using System.Linq;
 using System.Reflection;
 using AsyncRewriter.Logging;
+using AsyncSolutionRewriter;
 using Microsoft.CodeAnalysis;
 using Microsoft.CodeAnalysis.CSharp;
 using Microsoft.CodeAnalysis.CSharp.Syntax;
@@ -304,21 +305,28 @@ namespace AsyncRewriter
             _symbolsToRewrite = symbolsToRewrite;
         }
 
-        public override SyntaxNode VisitInvocationExpression(InvocationExpressionSyntax node)
+        public override SyntaxNode? VisitInvocationExpression(InvocationExpressionSyntax node)
         {
             int cancellationTokenPos;
             if (!IsInvocationExpressionRewritable(node, out cancellationTokenPos))
-                return node;
+                return base.VisitInvocationExpression(node);
 
             var rewritten = RewriteInvocationExpression(node, cancellationTokenPos);
-            if (!(node.Parent is StatementSyntax))
+            
+            rewritten = SyntaxFactory.AwaitExpression(rewritten);
+
+            var parent = node.Parent;
+            if (!(parent is StatementSyntax || parent is ArgumentSyntax || parent is EqualsValueClauseSyntax || parent is AssignmentExpressionSyntax))
                 rewritten = SyntaxFactory.ParenthesizedExpression(rewritten);
-            return SyntaxFactory.AwaitExpression(rewritten);
+
+            return rewritten;
         }
 
         public bool IsInvocationExpressionRewritable(InvocationExpressionSyntax node, out int cancellationTokenPos)
         {
             cancellationTokenPos = -1;
+
+            Program.WriteDualColorLine("Checking Invocation: ", ConsoleColor.DarkYellow, node.ToString(), ConsoleColor.Yellow);
 
             var syncSymbol = (IMethodSymbol)_model.GetSymbolInfo(node).Symbol;
             if (syncSymbol == null)
@@ -331,6 +339,7 @@ namespace AsyncRewriter
                 // This is one of our methods, flagged for async rewriting.
                 // Find the proper position for the cancellation token
                 cancellationTokenPos = syncSymbol.Parameters.TakeWhile(p => !p.IsOptional && !p.IsParams).Count();
+                Program.WriteDualColorLine("Invocation Marked for Rewrite: ", ConsoleColor.DarkGreen, node.ToString(), ConsoleColor.Green);
             }
             else
             {
@@ -348,28 +357,33 @@ namespace AsyncRewriter
                     if (!candidate.Parameters.RemoveAt(ctPos).SequenceEqual(syncSymbol.Parameters, _paramComparer))
                         continue;
                     cancellationTokenPos = ctPos;
+
+                    Program.WriteDualColorLine("Cancelable Invocation Candidate Found: ", ConsoleColor.DarkCyan, candidate.ToString(), ConsoleColor.Cyan);
                 }
 
                 if (cancellationTokenPos == -1)
                 {
                     // Couldn't find an async overload that accepts a cancellation token.
                     // Next attempt to find an async method with a matching parameter list with no cancellation token
-                    if (asyncCandidates.Any(ms =>
-                            ms.Parameters.Length == syncSymbol.Parameters.Length &&
-                            ms.Parameters.SequenceEqual(syncSymbol.Parameters)
-                    ))
+                    IMethodSymbol? fallback = asyncCandidates.FirstOrDefault(ms =>
+                                                                                ms.Parameters.Length == syncSymbol.Parameters.Length &&
+                                                                                ms.Parameters.SequenceEqual(syncSymbol.Parameters)
+                                                                            );
+                    if (fallback != null)
                     {
+                        Program.WriteDualColorLine("Fallback Invocation Candidate Found: ", ConsoleColor.DarkMagenta, fallback.ToString(), ConsoleColor.Magenta);
                         cancellationTokenPos = -1;
                     }
                     else
                     {
+                        Program.WriteDualColorLine("No Async Symbol Replacement Found: ", ConsoleColor.DarkGray, syncSymbol.ToString(), ConsoleColor.White);
                         // Couldn't find anything, don't rewrite the invocation
                         return false;
                     }
                 }
             }
 
-            _log.Debug("    Found rewritable invocation: " + syncSymbol);
+            //_log.Debug("    Found rewritable invocation: " + syncSymbol);
             return true;
         }
 
