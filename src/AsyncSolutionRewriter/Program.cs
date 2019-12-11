@@ -18,15 +18,17 @@ namespace AsyncSolutionRewriter
 
         static int methodsToRewrite = 0;
         static int manualRewrite = 0;
-        static int nullDocumentsFromDeclaration = 0;
-        static int nullCompilationFromDeclaration = 0;
         static int nullSymbolsFromDeclaration = 0;
         static int symbolsWithNoContainingType = 0;
         static int unhandledFieldDeclarations = 0;
+        static int nullDocumentsFromDeclaration = 0;
+        static int nullCompilationFromDeclaration = 0;
         static int unhandledReferenceAnalyses = 0;
         static int rewriteExceptions = 0;
 
-        //static Dictionary<string, string>
+        static DateTime lastSleep = DateTime.Now;
+
+        static Dictionary<string, string> errorMap = new Dictionary<string, string>();
         
 
         static HashSet<SyntaxNode> declarationsToRewrite = new HashSet<SyntaxNode>();
@@ -36,10 +38,10 @@ namespace AsyncSolutionRewriter
 
         static async Task Main(string[] args)
         {
+            var fullPath = args != null ? string.Join(" ", args) : null;
+            
             try
             {
-                var fullPath = args != null ? string.Join(" ", args) : null;
-
                 if (fullPath == null || !File.Exists(fullPath))
                 {
                     WriteUsage();
@@ -50,24 +52,22 @@ namespace AsyncSolutionRewriter
             } 
             catch (Exception ex)
             {
+                var error = ex.ToString();
+
+                RegisterError(fullPath ?? "NULL", error);
+
                 var prevColor = Console.ForegroundColor;
                 Console.ForegroundColor = ConsoleColor.Red;
                 Console.WriteLine("Exception Occurred:");
-                Console.WriteLine(ex.ToString());
+                Console.WriteLine(error);
                 Console.ForegroundColor = prevColor;
             }
 
             finally
             {
-                Console.WriteLine();
-                WriteDualColorLine("Methods to Rewrite: ", ConsoleColor.DarkGreen, methodsToRewrite.ToString(), ConsoleColor.Green);
-                WriteDualColorLine("Manual Rewrites: ", ConsoleColor.DarkYellow, manualRewrite.ToString(), ConsoleColor.Yellow);
-                WriteDualColorLine("Null Symbols From Declaration: ", ConsoleColor.DarkRed, nullSymbolsFromDeclaration.ToString(), ConsoleColor.Red);
-                WriteDualColorLine("Symbols With No Containing Type: ", ConsoleColor.DarkRed, symbolsWithNoContainingType.ToString(), ConsoleColor.Red);
-                WriteDualColorLine("Unhandled Field Declarations: ", ConsoleColor.DarkRed, unhandledFieldDeclarations.ToString(), ConsoleColor.Red);
-                WriteDualColorLine("Declarations Set: ", ConsoleColor.DarkBlue, declarationsToRewrite.Count.ToString(), ConsoleColor.Blue);
-                WriteDualColorLine("Symbol Set: ", ConsoleColor.DarkBlue, symbolsToRewrite.Count.ToString(), ConsoleColor.Blue);
-                WriteDualColorLine("Pending Queue: ", ConsoleColor.DarkYellow, pendingHierarchiesToAnalyze.Count.ToString(), ConsoleColor.Yellow);
+                WriteErrors();
+                WriteStats();
+                WriteSymbols();
 #if DEBUG
                 Console.WriteLine("Press Enter to Exit");
                 Console.ReadLine();
@@ -75,9 +75,93 @@ namespace AsyncSolutionRewriter
             }
         }
 
+        private static void WriteSymbols()
+        {
+            using (var writer = File.CreateText($"Symbols_{DateTime.Now.ToString("yyyyMMddHHmmss")}.txt"))
+            {
+                foreach (var sym in symbolsToRewrite)
+                {
+                    writer.WriteLine(sym);
+                }
+                writer.Flush();
+            }
+        }
+
+        private static void WriteErrors()
+        {
+            using (var writer = File.CreateText($"Exceptions_{DateTime.Now.ToString("yyyyMMddHHmmss")}.txt"))
+            {
+                foreach (var kvp in errorMap)
+                {
+                    writer.WriteLine(kvp.Key);
+                    writer.WriteLine();
+                    writer.WriteLine(kvp.Value);
+                    writer.WriteLine();
+                    writer.WriteLine("------------------------------------------");
+                    writer.WriteLine();
+                }
+
+                writer.WriteLine("Methods to Rewrite: " + methodsToRewrite.ToString());
+                writer.WriteLine("Manual Rewrites: " + manualRewrite.ToString());
+                writer.WriteLine("Null Documents From Declaration: " + nullDocumentsFromDeclaration.ToString());
+                writer.WriteLine("Null Compilations From Declaration: " + nullCompilationFromDeclaration.ToString());
+                writer.WriteLine("Null Symbols From Declaration: " + nullSymbolsFromDeclaration.ToString());
+                writer.WriteLine("Symbols With No Containing Type: " + symbolsWithNoContainingType.ToString());
+                writer.WriteLine("Unhandled Field Declarations: " + unhandledFieldDeclarations.ToString());
+                writer.WriteLine("Unhandled Reference Analyses: " + unhandledReferenceAnalyses.ToString());
+                writer.WriteLine("Unhandled Rewrite Exceptions: " + rewriteExceptions.ToString());
+                writer.WriteLine("Declarations Set: " + declarationsToRewrite.Count.ToString());
+                writer.WriteLine("Symbol Set: " + symbolsToRewrite.Count.ToString());
+                writer.WriteLine("Pending Queue: " + pendingHierarchiesToAnalyze.Count.ToString());
+
+                writer.Flush();
+            }
+        }
+
+        private static void WriteStats()
+        {
+            Console.WriteLine();
+
+            var prevColor = Console.ForegroundColor;
+            Console.ForegroundColor = ConsoleColor.Blue;
+            Console.WriteLine("**************************************************");
+            Console.ForegroundColor = prevColor;
+            Console.WriteLine();
+
+            WriteDualColorLine("Methods to Rewrite: ", ConsoleColor.DarkGreen, methodsToRewrite.ToString(), ConsoleColor.Green);
+            WriteDualColorLine("Manual Rewrites: ", ConsoleColor.DarkYellow, manualRewrite.ToString(), ConsoleColor.Yellow);
+
+            WriteDualColorLine("Null Documents From Declaration: ", ConsoleColor.DarkRed, nullDocumentsFromDeclaration.ToString(), ConsoleColor.Red);
+            WriteDualColorLine("Null Compilations From Declaration: ", ConsoleColor.DarkRed, nullCompilationFromDeclaration.ToString(), ConsoleColor.Red);
+            WriteDualColorLine("Null Symbols From Declaration: ", ConsoleColor.DarkRed, nullSymbolsFromDeclaration.ToString(), ConsoleColor.Red);
+
+            WriteDualColorLine("Symbols With No Containing Type: ", ConsoleColor.DarkRed, symbolsWithNoContainingType.ToString(), ConsoleColor.Red);
+            WriteDualColorLine("Unhandled Field Declarations: ", ConsoleColor.DarkRed, unhandledFieldDeclarations.ToString(), ConsoleColor.Red);
+            WriteDualColorLine("Unhandled Reference Analyses: ", ConsoleColor.DarkRed, unhandledReferenceAnalyses.ToString(), ConsoleColor.Red);
+            WriteDualColorLine("Unhandled Rewrite Exceptions: ", ConsoleColor.DarkRed, rewriteExceptions.ToString(), ConsoleColor.Red);
+
+            WriteDualColorLine("Declarations Set: ", ConsoleColor.DarkBlue, declarationsToRewrite.Count.ToString(), ConsoleColor.Blue);
+
+            WriteDualColorLine("Symbol Set: ", ConsoleColor.DarkBlue, symbolsToRewrite.Count.ToString(), ConsoleColor.Blue);
+            WriteDualColorLine("Pending Queue: ", ConsoleColor.DarkYellow, pendingHierarchiesToAnalyze.Count.ToString(), ConsoleColor.Yellow);
+
+            Console.WriteLine();
+
+            prevColor = Console.ForegroundColor;
+            Console.ForegroundColor = ConsoleColor.Blue;
+            Console.WriteLine("**************************************************");
+            Console.ForegroundColor = prevColor;
+            Console.WriteLine();
+        }
+
         static void WriteUsage()
         {
             Console.WriteLine("Usage: AsyncSolutionRewriter.exe C:\\Path To The\\Solution.sln");
+        }
+
+        static void RegisterError(string source, string error)
+        {
+            errorMap[source] = error;
         }
 
         public static void WriteDualColor(string prefix, ConsoleColor prefixColor, string suffix, ConsoleColor suffixColor)
@@ -166,11 +250,23 @@ namespace AsyncSolutionRewriter
 
                 //var pendingHierarchiesToAnalyze = new Queue<ISymbol>();
                 await AnalyzeReferences(references, solution, declarationsToRewrite, pendingHierarchiesToAnalyze);
-
+                
                 while (pendingHierarchiesToAnalyze.Count > 0)
                 {
+                    if ((DateTime.Now - lastSleep).TotalMinutes > 30)
+                    {
+                        Console.WriteLine();
+                        Console.WriteLine("*** SLEEPING ***");
+                        await Task.Delay(120000); // sleep two minutes
+                        lastSleep = DateTime.Now;
+                        Console.WriteLine();
+                    }
+
                     var symbol = pendingHierarchiesToAnalyze.Dequeue();
                     symbolsToRewrite.Add(symbol.ToString());
+                    
+                    if ((symbolsToRewrite.Count % 250) == 0) WriteStats();
+
 
                     if (symbol.ContainingType != null)
                     {
@@ -204,14 +300,11 @@ namespace AsyncSolutionRewriter
                     await AnalyzeReferences(references, solution, declarationsToRewrite, pendingHierarchiesToAnalyze);
                 }
 
-                Console.WriteLine();
-                Console.WriteLine("**************************************");
-                Console.WriteLine();
-
                 var rewriter = new AsyncRewriter.Rewriter();
 
                 foreach (var toRewrite in declarationsToRewrite)
                 {
+                    if ((methodsToRewrite % 250) == 0) WriteStats();
                     try
                     {
                         if (toRewrite is MethodDeclarationSyntax methodToRewrite)
@@ -266,15 +359,20 @@ namespace AsyncSolutionRewriter
                     } 
                     catch (Exception ex)
                     {
-                        rewriteExceptions++;
-                        
-                        WriteDualColorLine("Exception Rewriting Declaration: ", ConsoleColor.DarkRed, toRewrite.ToString(), ConsoleColor.Red);
+                        rewriteExceptions++; // TODO: NullRef Reported Here? Probably toRewrite = null? Seems strange
+
+                        var source = toRewrite.ToString();
+                        var error = ex.ToString();
+
+                        RegisterError(source, error);
+
+                        WriteDualColorLine("Exception Rewriting Declaration: ", ConsoleColor.DarkRed, source, ConsoleColor.Red);
                         
                         var prevColor = Console.ForegroundColor;
                         
                         Console.ForegroundColor = ConsoleColor.Red;
                         
-                        Console.WriteLine(ex.ToString());
+                        Console.WriteLine(error);
                         
                         Console.ForegroundColor = prevColor;
                     }
@@ -340,12 +438,17 @@ namespace AsyncSolutionRewriter
                                 {
                                     unhandledFieldDeclarations++;
 
+                                    string source = fieldDeclarationToAnalyze.ToString();
+                                    string error = ex.ToString();
+
+                                    RegisterError(source, error);
+
                                     var prevColor = Console.ForegroundColor;
 
                                     Console.WriteLine();
-                                    WriteDualColorLine("Exception Analyzing Field Declaration: ", ConsoleColor.DarkRed, fieldDeclarationToAnalyze.ToString(), ConsoleColor.DarkYellow);
+                                    WriteDualColorLine("Exception Analyzing Field Declaration: ", ConsoleColor.DarkRed, source, ConsoleColor.DarkYellow);
                                     Console.ForegroundColor = ConsoleColor.Red;
-                                    Console.WriteLine(ex.ToString());
+                                    Console.WriteLine(error);
                                     Console.ForegroundColor = prevColor;
                                     Console.WriteLine();
                                 }
@@ -381,12 +484,17 @@ namespace AsyncSolutionRewriter
                     {
                         unhandledReferenceAnalyses++;
 
+                        string source = refUsage?.ToString() ?? "NULL TOKEN";
+                        string error = ex.ToString();
+
+                        RegisterError(source, error);
+
                         var prevColor = Console.ForegroundColor;
 
                         Console.WriteLine();
-                        WriteDualColorLine("Exception Analyzing Reference: ", ConsoleColor.DarkRed, refUsage?.ToString() ?? "NULL TOKEN", ConsoleColor.DarkYellow);
+                        WriteDualColorLine("Exception Analyzing Reference: ", ConsoleColor.DarkRed, source, ConsoleColor.DarkYellow);
                         Console.ForegroundColor = ConsoleColor.Red;
-                        Console.WriteLine(ex.ToString());
+                        Console.WriteLine(error);
                         Console.ForegroundColor = prevColor;
                         Console.WriteLine();
                     }
