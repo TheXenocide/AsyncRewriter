@@ -284,6 +284,7 @@ namespace AsyncSolutionRewriter
                         symbolsWithNoContainingType++;
                     }
 
+                    // TODO: Abstract methods
                     // TODO: Overrides/Overridden
                     //  TODO:   System Interfaces/Overrides (ICollection, Equals, ToString, GetHashCode, IComparable)
                     // TODO: Lambdas?
@@ -292,6 +293,8 @@ namespace AsyncSolutionRewriter
                     // TODO: Write Cancelation token as optional = default???
                     // TODO: Improve optional/params/named parameter handling???
                     // TODO: Do NOT rewrite already async methods
+                    // TODO: Detect and/or rewrite locks inside async methods?
+                    // TODO: Address nullable reference warnings
 
                     Console.WriteLine();
                     WriteDualColorLine("Finding References of ", ConsoleColor.DarkGreen, symbol.ToString(), ConsoleColor.Cyan);
